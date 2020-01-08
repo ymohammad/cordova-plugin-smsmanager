@@ -1,0 +1,43 @@
+{
+  "name": "cordova-plugin-smsmanager",
+  "version": "1.0.0",
+  "description": "Cordova plugin to manage SMS in Android",
+  "cordova": {
+    "id": "cordova-plugin-smsmanager",
+    "platforms": [
+      "android"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "bugs": {
+    "url": ""
+  },
+  "keywords": [
+    "cordova",
+    "ecosystem:cordova",
+    "sms",
+    "receive",
+    "read"
+  ],
+  "engines": [
+    {
+      "name": "cordova",
+      "version": ">=6.0.0"
+    },
+    {
+      "name": "cordova-android",
+      "version": ">=4"
+    }
+  ],
+  "author": {
+    "name": "Andres Zsogon",
+    "email": "andreszs@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "cordova-paramedic": "^0.5.0"
+  }
+}

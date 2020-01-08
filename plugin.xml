@@ -4,38 +4,47 @@
     id="cordova-plugin-smsmanager"
     version="1.0.0">
     <name>SMS Manager</name>
-	<description>Cordova plugin to Read and Receive SMS in Android</description>
-	<author>Mohammed Sufyan AL Yousufi</author>
+	  <description>Cordova plugin to Read and Receive SMS in Android</description>
+	  <author>Mohammed Sufyan AL Yousufi</author>
     <license>MIT</license>
     <keywords></keywords>
     <repo>https://github.com/ymohammad/cordova-plugin-smsmanager.git</repo>
     <issue>https://github.com/ymohammad/cordova-plugin-smsmanager/issues</issue>
     <engines>
-		<engine name="cordova" version=">=6.0.0" />
+		  <engine name="cordova" version=">=6.0.0" />
     </engines>
-    <!-- android -->
-    <platform name="android">
-      <js-module src="www/SMSManager.js" name="SMSManager">
+    <js-module src="www/SMSManager.js" name="SMSManager">
         <runs/>
-
         <!-- This is the window variable name you want, like window.MyCordovaPlugin -->
         <clobbers target="SMSManager" />
       </js-module>
+    <!-- android -->
+    <platform name="android">
+      
       <config-file target="res/xml/config.xml" parent="/*">
         <feature name="SMSManager">
-          <param name="android-package" value="com.droaidsoft.SMSManager.java" />
+          <param name="android-package" value="com.droaidsoft.cordova.sms.SMSManager.java" />
           <param name="onload" value="true" />
         </feature>
       </config-file>
 
-	  <config-file target="AndroidManifest.xml" parent="/*">
-		   <uses-feature android:name="android.hardware.telephony" android:required="false" />
-		   <uses-permission android:name="android.permission.RECEIVE_SMS" />
-		   <uses-permission android:name="android.permission.READ_SMS" />
-		   <uses-permission android:name="android.permission.SEND_SMS" />
-	  </config-file>
-      <source-file src="src/android/com/droaidsoft/cordova/sms/SMSManager.java" target-dir="src/com/droaidsoft/" />
+      <config-file target="AndroidManifest.xml" parent="/*">
+        <uses-feature android:name="android.hardware.telephony" android:required="false" />
+        <uses-permission android:name="android.permission.RECEIVE_SMS" />
+        <uses-permission android:name="android.permission.READ_SMS" />
+        <uses-permission android:name="android.permission.SEND_SMS" />
+      </config-file>
+
+      <!--Main files-->
+      <source-file src="src/android/com/droaidsoft/cordova/sms/SMSManager.java" target-dir="src/com/droaidsoft/cordova/sms/" />
+      <source-file src="src/android/com/droaidsoft/cordova/sms/SMSUtils.java" target-dir="src/com/droaidsoft/cordova/sms/" />
+      <source-file src="src/android/com/droaidsoft/cordova/sms/PluginUtils.java" target-dir="src/com/droaidsoft/cordova/sms/" />
+
+      <source-file src="src/android/com/droaidsoft/cordova/sms/exceptions/CursorJsonConverstionException.java" target-dir="src/com/droaidsoft/cordova/sms/exceptions/" />
+      <source-file src="src/android/com/droaidsoft/cordova/sms/services/SmsReceiver.java" target-dir="src/com/droaidsoft/cordova/sms/services/" />
+      
+      <!--Constants-->
+      <source-file src="src/android/com/droaidsoft/cordova/sms/constants/AppConstants.java" target-dir="src/com/droaidsoft/cordova/sms/constants/" />
+      <source-file src="src/android/com/droaidsoft/cordova/sms/constants/Filter.java" target-dir="src/com/droaidsoft/cordova/sms/constants/" />
     </platform>
-
-
 </plugin>

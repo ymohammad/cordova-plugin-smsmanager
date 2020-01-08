@@ -9,7 +9,7 @@ public class AppConstants {
     public static final String MESSAGE = "MESSAGE";
     public static final int NOTIFICATION_ID_SMALL = 100;
     public static final String TIMESTAMP = "TIMESTAMP";
-    public static final String LOG_TAG = "cordova-plugin-smsmanager";
+    public static final String LOG_TAG = "cordova-smsmanager";
     public static final String ACTION_FETCH_SMS = "fetchSMS";
     public static final String ACTION_START_WATCH = "startWatch";
     public static final String ACTION_STOP_WATCH = "stopWatch";

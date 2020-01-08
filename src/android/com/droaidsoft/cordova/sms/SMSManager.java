@@ -139,15 +139,7 @@ public class SMSManager extends CordovaPlugin {
 	 */
 	private boolean hasPermission() {
 
-		if(Build.VERSION.SDK_INT < AppConstants.BUILD_VERSION) {
-			return true;
-		}
-		
-		if (cordova.getActivity().checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_DENIED) {
-			return false;
-		}
-
-		return true;
+		return false;
 
 	}
 

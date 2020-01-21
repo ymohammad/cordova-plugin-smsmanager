@@ -1,6 +1,20 @@
-/**
- * 
- */
+/*******************************************************************************************************************************
+The MIT License (MIT)
+Copyright © 2020, Mohammed Sufiyan Al Yousufi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), 
+to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, 
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the 
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED 
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS 
+IN THE SOFTWARE.
+*******************************************************************************************************************************/
 package com.droaidsoft.cordova.sms;
 
 import android.Manifest;
@@ -43,24 +57,32 @@ import com.droaidsoft.cordova.sms.services.SmsReceiver;
 public class SMSManager extends CordovaPlugin {
 	
 	private BroadcastReceiver mReceiver = null;
-	private JSONArray requestArgs;
-	private CallbackContext callbackContext;
 
+	/**
+	 * Plugin Execution method.
+	 */
 	public boolean execute(String action, JSONArray inputs, CallbackContext callbackContext) throws JSONException {
 		PluginResult result = null;
-		this.callbackContext = callbackContext;
-		this.requestArgs = inputs;
+		
 		if (action.equals(AppConstants.ACTION_START_WATCH)) {
-			if(!hasPermission()) {
-				requestPermissions(AppConstants.START_WATCH_REQ_CODE);
-			} else {
-				result = this.startWatch(callbackContext);
-			}
+			result = this.startWatch(callbackContext);
 		} else if (action.equals(AppConstants.ACTION_STOP_WATCH)) {
 			result = this.stopWatch(callbackContext);
 		} else if (action.equals(AppConstants.ACTION_FETCH_SMS)) {
 			JSONObject filters = inputs.optJSONObject(0);
             result = this.fetchSMS(filters, callbackContext);
+		} else if (action.equals(AppConstants.ACTION_FETCH_CONVERSATION_INFO)) {
+			JSONObject filters = inputs.optJSONObject(0);
+            result = this.fetchConversationInfo(filters, callbackContext);
+		} else if (action.equals(AppConstants.ACTION_FETCH_ALL_CONVERSATIONS_OF_A_NUMBER)) {
+			JSONObject filters = inputs.optJSONObject(0);
+            result = this.fetchAllConversationOfANumber(filters, callbackContext);
+		} else if (action.equals(AppConstants.ACTION_FETCH_ALL_MESSAGES_OF_A_CONVERSATION)) {
+			JSONObject filters = inputs.optJSONObject(0);
+            result = this.fetchAllMessagesOfAConversation(filters, callbackContext);
+		} else if (action.equals(AppConstants.ACTION_FETCH_ALL_USERS_OF_A_CONVERSATION)) {
+			JSONObject filters = inputs.optJSONObject(0);
+            result = this.fetchAllUsersOfAConversation(filters, callbackContext);
 		} else {
 			Log.d(AppConstants.LOG_TAG, String.format("Invalid action passed: %s", action));
 			result = new PluginResult(PluginResult.Status.INVALID_ACTION);
@@ -71,12 +93,124 @@ public class SMSManager extends CordovaPlugin {
 		return true;
 	}
 
-	
-
+	/**
+	 * Handler Method to perform Stop Watch.
+	 */
 	public void onDestroy() {
 		this.stopWatch(null);
 	}
-	private PluginResult fetchSMS(JSONObject options, CallbackContext callbackContext2)
+	/**
+	 * Plugin method to fetch Conversations.
+	 * @param options
+	 * @param callbackContext
+	 * @return
+	 */
+	private PluginResult fetchConversationInfo(JSONObject options, CallbackContext callbackContext) {
+		Log.i(AppConstants.LOG_TAG, "Starting the SMS Fetch operation." + options);
+		if (options == null) {
+			callbackContext.error("Options object is required to invoke this API Method.");
+			return null;
+		}
+		Filter filter = new Filter(options);
+        Activity ctx = this.cordova.getActivity();
+        JSONArray jsonArray;
+		try
+		{
+			jsonArray = SMSUtils.fetchConversationInfo(ctx, filter);
+			callbackContext.success(jsonArray);
+		} catch (Throwable e)
+		{
+			e.printStackTrace();
+			callbackContext.error(e.getMessage());
+		}
+        return null;
+	}
+	/**
+	 * Plugin Method to fetch All Messages of a conversation.
+	 * @param options
+	 * @param callbackContext
+	 * @return
+	 */
+	private PluginResult fetchAllMessagesOfAConversation(JSONObject options, CallbackContext callbackContext)
+	{
+		if (options == null) {
+			callbackContext.error("Options object is required to invoke this API Method.");
+			return null;
+		}
+		Filter filter = new Filter(options);
+        Activity ctx = this.cordova.getActivity();
+        JSONArray jsonArray;
+		try
+		{
+			jsonArray = SMSUtils.fetchAllMessagesOfConversation(ctx, filter);
+			callbackContext.success(jsonArray);
+		} catch (Throwable e)
+		{
+			e.printStackTrace();
+			callbackContext.error(e.getMessage());
+		}
+        return null;
+	}
+	/**
+	 * Plugin Method to fetch All Messages of a conversation.
+	 * @param options
+	 * @param callbackContext
+	 * @return
+	 */
+	private PluginResult fetchAllUsersOfAConversation(JSONObject options, CallbackContext callbackContext)
+	{
+		if (options == null) {
+			callbackContext.error("Options object is required to invoke this API Method.");
+			return null;
+		}
+		Filter filter = new Filter(options);
+        Activity ctx = this.cordova.getActivity();
+        JSONArray jsonArray;
+		try
+		{
+			jsonArray = SMSUtils.fetchAllUsersOfAConversation(ctx, filter);
+			callbackContext.success(jsonArray);
+		} catch (Throwable e)
+		{
+			e.printStackTrace();
+			callbackContext.error(e.getMessage());
+		}
+        return null;
+	}
+
+	/**
+	 * Plugin Method to get All the converstation of a number.
+	 * @param options
+	 * @param callbackContext
+	 * @return
+	 */
+	private PluginResult fetchAllConversationOfANumber(JSONObject options, CallbackContext callbackContext)
+	{
+		if (options == null) {
+			callbackContext.error("Options object is required to invoke this API Method.");
+			return null;
+		}
+		Filter filter = new Filter(options);
+        Activity ctx = this.cordova.getActivity();
+        JSONArray jsonArray;
+		try
+		{
+			jsonArray = SMSUtils.fetchUniqueConversations(ctx, filter);
+			callbackContext.success(jsonArray);
+		} catch (Throwable e)
+		{
+			e.printStackTrace();
+			callbackContext.error(e.getMessage());
+		}
+        return null;
+	}
+	/**
+	 * Plugin method to fetch SMS.
+	 * @param options
+	 * @param callbackContext
+	 * @return
+	 */
+	private PluginResult fetchSMS(JSONObject options, CallbackContext callbackContext)
 	{
 		Log.i(AppConstants.LOG_TAG, "Starting the SMS Fetch operation." + options);
         
@@ -94,6 +228,11 @@ public class SMSManager extends CordovaPlugin {
 		}
         return null;
 	}
+	/**
+	 * Plugin method to perform Start Watch.
+	 * @param callbackContext
+	 * @return
+	 */
 	private PluginResult startWatch(CallbackContext callbackContext) {
 		Log.d(AppConstants.LOG_TAG, AppConstants.ACTION_START_WATCH);
 		if (this.mReceiver == null) {
@@ -105,6 +244,11 @@ public class SMSManager extends CordovaPlugin {
 		return null;
 	}
 
+	/**
+	 * Plugin method to perform Stop Watch.
+	 * @param callbackContext
+	 * @return
+	 */
 	private PluginResult stopWatch(CallbackContext callbackContext) {
 		Log.d(AppConstants.LOG_TAG, AppConstants.ACTION_STOP_WATCH);
 		if (this.mReceiver != null) {
@@ -122,60 +266,16 @@ public class SMSManager extends CordovaPlugin {
 		return null;
 	}
 
+	/**
+	 * To create Incoming SMS Receiver.
+	 */
 	protected void createIncomingSMSReceiver() {
 		this.mReceiver = new SmsReceiver(webView);
-		IntentFilter filter = new IntentFilter(AppConstants.SMS_RECEIVED_ACTION);
+		IntentFilter filter = new IntentFilter(AppConstants.ACTION_SMS_RECEIVED);
 		try {
 			webView.getContext().registerReceiver(this.mReceiver, filter);
 		} catch (Exception e) {
 			Log.d(AppConstants.LOG_TAG, "error registering broadcast receiver: " + e.getMessage());
-		}
-	}
-
-	
-
-	/**
-	 * Check if we have been granted SMS receiving permission on Android 6+
-	 */
-	private boolean hasPermission() {
-
-		return false;
-
-	}
-
-	/**
-	 * We override this so that we can access the permissions variable, which no longer exists in
-	 * the parent class, since we can't initialize it reliably in the constructor!
-	 *
-	 * @param requestCode The code to get request action
-	 */
-	public void requestPermissions(int requestCode) {
-
-		cordova.requestPermission(this, requestCode, Manifest.permission.RECEIVE_SMS);
-
-	}
-	
-	/**
-	 * processes the result of permission request
-	 *
-	 * @param requestCode The code to get request action
-	 * @param permissions The collection of permissions
-	 * @param grantResults The result of grant
-	 */
-	public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
-		PluginResult result;
-		for (int r : grantResults) {
-			if (r == PackageManager.PERMISSION_DENIED) {
-				Log.d(AppConstants.LOG_TAG, "Permission Denied!");
-				result = new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION);
-				callbackContext.sendPluginResult(result);
-				return;
-			}
-		}
-		switch(requestCode) {
-			case AppConstants.START_WATCH_REQ_CODE:
-				this.startWatch(this.callbackContext);
-			break;
 		}
 	}
 }

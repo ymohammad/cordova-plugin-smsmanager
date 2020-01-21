@@ -1,6 +1,26 @@
+/*******************************************************************************************************************************
+The MIT License (MIT)
+Copyright © 2020, Mohammed Sufiyan Al Yousufi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), 
+to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, 
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the 
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED 
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS 
+IN THE SOFTWARE.
+*******************************************************************************************************************************/
 package com.droaidsoft.cordova.sms;
 
+import java.util.HashSet;
+
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import com.droaidsoft.cordova.sms.constants.AppConstants;
@@ -14,9 +34,14 @@ import android.provider.BaseColumns;
 import android.provider.Telephony;
 import android.provider.Telephony.Sms;
 import android.provider.Telephony.Threads;
-//import com.google.android.mms.pdu.CharacterSets;
 import android.telephony.PhoneNumberUtils;
+import android.util.Log;
 
+/**
+ * Business Logic to fetch SMS data.
+ * @author ymohammad
+ *
+ */
 public class SMSUtils {
     public static final String TAG = SMSUtils.class.getSimpleName();
     public static final Uri sAllThreadsUri =
@@ -39,6 +64,11 @@ public class SMSUtils {
             Threads._ID, Threads.DATE, Threads.MESSAGE_COUNT, Threads.RECIPIENT_IDS,
             Threads.SNIPPET, Threads.SNIPPET_CHARSET, Threads.READ, Threads.ERROR,
             Threads.HAS_ATTACHMENT
+    };
+
+    public static final String[] CONVERSATION_PROJECTION = {
+            Sms.Conversations.THREAD_ID,
+            Sms.Conversations.SNIPPET, Sms.Conversations.MESSAGE_COUNT
     };
     // The indexes of the default columns which must be consistent
     // with above PROJECTION.
@@ -63,22 +93,38 @@ public class SMSUtils {
     private static final int ERROR          = 7;
     private static final int HAS_ATTACHMENT = 8;
 
-    public static JSONArray fetchSmsMessages(Context context, Filter filter) throws CursorJsonConverstionException {
+    /**
+     * Fetch Conversations and return to the user.
+     * @param context
+     * @param filter
+     * @return
+     * @throws CursorJsonConverstionException
+     */
+    public static JSONArray fetchConversationInfo(Context context, Filter filter) throws CursorJsonConverstionException {
+    	if (filter.conversationId == -1) {
+            throw new CursorJsonConverstionException("Conversation ID is required to get Conversation information.");
+        }
+    	
     	JSONArray returnArr = new JSONArray();
-    	Uri uri = getUri(filter.folderLocation);
-        Cursor cur = context.getContentResolver().query(uri, (String[])null, "", (String[])null, null);
+    	Uri uri = Telephony.Sms.Conversations.CONTENT_URI;
+    	String selection = getConversationSelection(filter);
+    	String sortOrder = " date DESC ";
+    	if (filter.maxConversationCount != -1) {
+            sortOrder += " LIMIT " + filter.maxConversationCount;
+        }
+        Cursor cur = context.getContentResolver().query(uri, CONVERSATION_PROJECTION, selection, (String[])null, sortOrder);
         int currIndex = 0;
         try {
         	while (cur.moveToNext()) {
-                JSONObject json;
-                
-                if (isFilteredMessage(cur, filter, currIndex)) {
-                	json = PluginUtils.getMessageJsonObject(cur);
-                	if (json == null) {
-                		throw new CursorJsonConverstionException("Unable to get JSON object using the cursor.");
-                	}
-                	returnArr.put(json);
-                	currIndex++;
+                JSONObject json = PluginUtils.getJSONObjectFromCursorRecord(cur);
+            	if (json == null) {
+            		throw new CursorJsonConverstionException("Unable to get JSON object using the cursor.");
+            	}
+            	returnArr.put(json);
+            	currIndex++;
+            	//Backward compatibility if LIMIT is not implemented.
+            	if (filter.maxConversationCount != -1 && currIndex >= filter.maxConversationCount) {
+            	    break;
                 }
             }
         } finally {
@@ -89,7 +135,256 @@ public class SMSUtils {
         return returnArr;
     }
     
+    /**
+     * Gets the list of conversations ids this address is involved.
+     * @param context
+     * @param fromAddress
+     * @return
+     * @throws CursorJsonConverstionException 
+     * @throws JSONException 
+     */
+    public static JSONArray fetchUniqueConversations(Context context, Filter filter) throws CursorJsonConverstionException, JSONException {
+    	if (filter.fromAddress == null || filter.fromAddress.trim().length() == 0) {
+    		throw new CursorJsonConverstionException("Mobile number is required to get unique conversation ids.");
+    	}
+    	
+    	Uri inboxUri = getUri(AppConstants.SMS_INBOX);
+    	String selectionStr = getMessagesSelection(filter);
+    	String[] projectStrArr = new String[]{"DISTINCT thread_id"};    	
+    	JSONArray inboxArray = executeNGetData(context, inboxUri, selectionStr, projectStrArr);
+    	JSONArray sentBoxArray = executeNGetData(context, getUri(AppConstants.SMS_SENT), selectionStr, projectStrArr);
+    	
+    	JSONArray finalArr = new JSONArray();
+    	HashSet hash = new HashSet();
+    	if (inboxArray != null && inboxArray.length() > 0) {
+    		for (int index = 0; index< inboxArray.length(); index++) {
+    			Object obj = inboxArray.get(index);
+    			if (obj != null && obj instanceof JSONObject) {
+    				JSONObject jsonObj = (JSONObject)obj;
+    				Object object = jsonObj.get("thread_id");
+    				if (!hash.contains(object)){
+    					finalArr.put(jsonObj);
+    					hash.add(object);
+    				}
+    			}
+    		}
+    	}
+    	if (sentBoxArray != null && sentBoxArray.length() > 0) {
+    		for (int index = 0; index< sentBoxArray.length(); index++) {
+    			Object obj = sentBoxArray.get(index);
+    			if (obj != null && obj instanceof JSONObject) {
+    				JSONObject jsonObj = (JSONObject)obj;
+    				Object object = jsonObj.get("thread_id");
+    				if (!hash.contains(object)){
+    					finalArr.put(jsonObj);
+    					hash.add(object);
+    				}
+    			}
+    		}
+    	}
+       return finalArr; 
+    }
     
+    /**
+     * API Method to get all the messages of a conversation. It fethes messages from Inbox and SentBox.
+     * @param context
+     * @param filter
+     * @return
+     * @throws CursorJsonConverstionException
+     * @throws JSONException 
+     */
+    public static JSONArray fetchAllMessagesOfConversation(Context context, Filter filter) throws CursorJsonConverstionException, JSONException {
+    	if (filter.threadId == -1) {
+    		throw new CursorJsonConverstionException("Conversation id (thread_id) is required to get all the messages.");
+    	}
+    	filter.folderLocation = AppConstants.SMS_INBOX;
+    	JSONArray inboxMsgs = fetchSmsMessages(context, filter);
+    	
+    	filter.folderLocation = AppConstants.SMS_SENT;
+    	JSONArray sentBoxMsgs = fetchSmsMessages(context, filter);
+    	//Update the addess to OWNER for the messages sent by the device Owner.
+    	if (sentBoxMsgs != null && sentBoxMsgs.length() > 0) {
+    		for(int ind = 0; ind < sentBoxMsgs.length(); ind++) {
+    			JSONObject eachObj = (sentBoxMsgs.get(ind) instanceof JSONObject) ? (JSONObject)sentBoxMsgs.get(ind) : null;
+    			if (eachObj != null) {
+    				eachObj.put(Telephony.Sms.Sent.ADDRESS, AppConstants.OWNER_NUMBER_CONST);
+    			}
+    		}
+    	}
+    	JSONArray finalArr = PluginUtils.mergeByDateOrder(inboxMsgs, sentBoxMsgs);
+    	return finalArr;
+    }
+    /**
+     * API Method to get all the Users of a conversation other than the owner.
+     * @param context
+     * @param filter
+     * @return
+     * @throws CursorJsonConverstionException
+     * @throws JSONException 
+     */
+    public static JSONArray fetchAllUsersOfAConversation(Context context, Filter filter) throws CursorJsonConverstionException, JSONException {
+    	if (filter.threadId == -1) {
+    		throw new CursorJsonConverstionException("Conversation id (thread_id) is required to get all the contacts.");
+    	}
+    	filter.folderLocation = AppConstants.SMS_INBOX;
+    	Uri inboxUri = getUri(AppConstants.SMS_INBOX);
+    	String addressKey = "address";
+    	
+    	String selectionStr = getMessagesSelection(filter);
+    	String[] projectStrArr = new String[]{"DISTINCT " + addressKey , "person"};    	
+    	JSONArray inboxArray = executeNGetData(context, inboxUri, selectionStr, projectStrArr);
+    	
+    	JSONArray returnArray = new JSONArray();
+    	JSONArray sentBoxArray = executeNGetData(context, getUri(AppConstants.SMS_SENT), selectionStr, projectStrArr);
+    	JSONArray mergedArr = PluginUtils.getAppendedArray(inboxArray, sentBoxArray, addressKey);
+
+    	//Get unique phone numbers. In Sent Messages, address value can be "8977309663 +917981647273"
+    	if (mergedArr != null && mergedArr.length() > 0) {
+    		HashSet<String> hash = new HashSet<String>();
+    		for (int index = 0; index < mergedArr.length(); index++) {
+				Object obj = mergedArr.get(index);
+				if (obj != null && obj instanceof JSONObject) {
+					JSONObject jsonObj = (JSONObject) obj;
+					String addressNumb = (String)jsonObj.get(addressKey);
+					if (addressNumb != null && addressNumb.trim().length() > 0) {
+						addressNumb = addressNumb.trim();
+						
+						if (addressNumb.indexOf(" ") != -1) {
+							String[] numbsArr = addressNumb.split(" ");
+							for (String eachNum: numbsArr) {
+								if (!hash.contains(eachNum.trim())) {
+									returnArray.put(PluginUtils.createJsonObj(addressKey, eachNum.trim()));
+									hash.add(eachNum.trim());
+								}
+							}
+						} else {
+							if (!hash.contains(addressNumb)) {
+								returnArray.put(PluginUtils.createJsonObj(addressKey, addressNumb));
+								hash.add(addressNumb);
+							}
+						}
+					}
+				}
+			}
+    	}
+    	return returnArray;
+    }
+    
+	/**
+     * Fetch SMS from Provider based on the filter.
+     * @param context
+     * @param filter
+     * @return
+     * @throws CursorJsonConverstionException
+	 * @throws JSONException 
+     */
+    public static JSONArray fetchSmsMessages(Context context, Filter filter) throws CursorJsonConverstionException {
+    	JSONArray returnArr = new JSONArray();
+    	Uri uri = getUri(filter.folderLocation);
+    	String selectionStr = getMessagesSelection(filter);
+    	String sortOrder = " date ASC ";
+    	if (filter.maxMessageCount != -1) {
+            sortOrder += " LIMIT " + filter.maxMessageCount;
+        }
+    	
+        Cursor cur = context.getContentResolver().query(uri, (String[])null, selectionStr, (String[])null, sortOrder);
+        int currIndex = 0;
+        try {
+        	while (cur.moveToNext()) {
+                JSONObject json = PluginUtils.getJSONObjectFromCursorRecord(cur);
+            	if (json == null) {
+            		throw new CursorJsonConverstionException("Unable to get JSON object using the cursor.");
+            	}
+            	
+            	returnArr.put(json);
+            	currIndex++;
+            	
+            	//Backward compatibility if Limit is not considered/implemented.
+            	if (filter.maxMessageCount != -1 && currIndex >= filter.maxMessageCount) {
+            	    break;
+                }
+            }
+        } finally {
+        	if (cur != null) {
+        		cur.close();
+        	}
+        }
+        return returnArr;
+    }
+    /**
+     * To fetch all threads from Threads Content Provider.
+     * 
+     * @param context
+     * @return
+     * @throws CursorJsonConverstionException
+     * @throws JSONException
+     */
+    public static JSONArray fetchThreads(Context context) throws CursorJsonConverstionException, JSONException {
+        JSONArray returnArr = new JSONArray();
+        Log.d(TAG,"**** Dump of threads table ****");
+        Cursor cur = context.getContentResolver().query(sAllThreadsUri,
+                null, null, null, " date DESC  LIMIT 3 ");
+        int currIndex = 0;
+        JSONObject tempObj = new JSONObject();
+        tempObj.put(AppConstants.OPTION_MAX_CONVERSATION_COUNT, 10);
+        Filter filter = new Filter(tempObj);
+        try {
+            while (cur.moveToNext()) {
+                JSONObject json;
+                json = PluginUtils.getJSONObjectFromCursorRecord(cur);
+                if (json == null) {
+                    throw new CursorJsonConverstionException("Unable to get JSON object using the cursor.");
+                }
+                returnArr.put(json);
+                currIndex++;
+            }
+        } finally {
+            if (cur != null) {
+                cur.close();
+            }
+        }
+        return returnArr;
+    }
+    
+    // All the Private Methods..
+    /**
+     * Wrapper method to execute the URI based on the given selection and projection.
+     * @param context
+     * @param uri
+     * @param selectionStr
+     * @param projectionStrArr
+     * @return
+     * @throws CursorJsonConverstionException
+     */
+    private static JSONArray executeNGetData(Context context, Uri uri, String selectionStr, String[] projectionStrArr) throws CursorJsonConverstionException {
+    	JSONArray returnArr = new JSONArray();
+        Cursor cur = context.getContentResolver().query(uri, projectionStrArr, selectionStr, (String[])null, "");
+        try {
+        	while (cur.moveToNext()) {
+                JSONObject json = PluginUtils.getJSONObjectFromCursorRecord(cur);
+            	if (json == null) {
+            		throw new CursorJsonConverstionException("Unable to get JSON object using the cursor.");
+            	}
+            	returnArr.put(json);
+            }
+        } finally {
+        	if (cur != null) {
+        		cur.close();
+        	}
+        }
+        return returnArr;
+    }
+    private static boolean isFilteredConversation(Cursor cur, Filter filter, int currIndex)
+	{
+    	boolean matchFilter = false;
+        if (filter.conversationId > -1) {
+            matchFilter = (filter.messageId == cur.getInt(cur.getColumnIndex("_id")));
+        } else if (filter.maxConversationCount != -1 && currIndex < filter.maxConversationCount){
+            matchFilter = true;
+        }
+        
+		return matchFilter;
+	}
     private static boolean isFilteredMessage(Cursor cur, Filter filter, int currIndex)
 	{
     	boolean matchFilter = false;
@@ -104,240 +399,6 @@ public class SMSUtils {
 		return matchFilter;
 	}
 
-
-
-
-	/*
-	public static List<Conversation> getSmsConversationList(Context context) {
-        List<Conversation> returnList = new ArrayList<>();
-        ContentResolver cr = context.getContentResolver();
-        Cursor cursor = cr.query(Telephony.Sms.Conversations.CONTENT_URI, null, null, null, Telephony.Sms.Conversations.DEFAULT_SORT_ORDER);
-        if (cursor != null) {
-            String[] allColumns = cursor.getColumnNames();
-            int totalSMS = cursor.getCount();
-            Log.d(TAG, "Total SMS Count in Inbox :" + totalSMS);
-            if (cursor.moveToFirst()) {
-                for (int j = 0; j < totalSMS; j++) {
-                    Conversation eachConversationObj = new Conversation();
-                    //String sender = cursor.getString(cursor.getColumnIndexOrThrow(Sms.Conversations.ADDRESS));
-                    //Log.d(TAG, "From sender :" + sender);
-                    eachConversationObj.setMessageCount(cursor.getInt(cursor.getColumnIndexOrThrow(Sms.Conversations.MESSAGE_COUNT)));
-                    eachConversationObj.setSnippet(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Conversations.SNIPPET)));
-                    eachConversationObj.setThreadId(cursor.getLong(cursor.getColumnIndexOrThrow(Sms.Conversations.THREAD_ID)));
-                    returnList.add(eachConversationObj);
-                    cursor.moveToNext();
-                }
-                cursor.close();
-            }
-        } else {
-            Log.d(TAG,"No message to show!");
-        }
-        return returnList;
-    }
-    public static void printMessageDetails(Context context, String threadId) {
-        ContentResolver cr = context.getContentResolver();
-        Cursor cursor = null;
-        String msgData = "";
-        List<MessageModel> returnList = new ArrayList<>();
-        try {
-            String selection = Sms.Inbox.THREAD_ID + " = " + threadId;
-
-
-
-            cursor = cr.query(Telephony.Sms.Inbox.CONTENT_URI, null, selection,
-                    null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
-            int totalSMS = 0;
-            long currentTime = System.currentTimeMillis();
-            int count = 0;
-            boolean countHoursAgo = true;
-            if (cursor != null) {
-                totalSMS = cursor.getCount();
-
-                Log.d(TAG, "Total SMS Count in Thread id" + threadId + " is " + totalSMS);
-                if (cursor.moveToFirst()) {
-                    for (int j = 0; j < totalSMS; j++) {
-                        MessageModel eachModel = new MessageModel();
-                        eachModel.setBelongsToCurrentUser(false);
-                        eachModel.setMessage(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Inbox.BODY)));
-                        eachModel.setReceivedDate(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Inbox.DATE)));
-                        eachModel.setSender(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Inbox.ADDRESS)));
-
-
-                        returnList.add(eachModel);
-
-                        for(int idx=0;idx<cursor.getColumnCount();idx++)
-                        {
-                            msgData += " " + cursor.getColumnName(idx) + ":" + cursor.getString(idx);
-                        }
-                        cursor.moveToNext();
-                    }
-
-                }
-            } else {
-                Log.d(TAG,  "No messages available for this thread id " + threadId);
-            }
-        } catch (Exception ex) {
-            Log.e(TAG, "Error raised ", ex);
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-       Log.d(TAG, "Got complete Messages list :" + returnList);
-        Log.d(TAG, "Msg in all columns :" + msgData);
-    }
-    public static List<MessageModel> getMessagesFromInboxForThread(Context context, long threadId) {
-        ContentResolver cr = context.getContentResolver();
-        Cursor cursor = null;
-        List<MessageModel> returnList = new ArrayList<>();
-        try {
-            String selection = Sms.Inbox.THREAD_ID + " = " + threadId;
-
-            cursor = cr.query(Telephony.Sms.Inbox.CONTENT_URI, null, selection,
-                    null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
-            int totalSMS = 0;
-            long currentTime = System.currentTimeMillis();
-            int count = 0;
-            boolean countHoursAgo = true;
-            if (cursor != null) {
-                totalSMS = cursor.getCount();
-
-                Log.d(TAG, "Total SMS Count in Thread id" + threadId + " is " + totalSMS);
-                if (cursor.moveToFirst()) {
-                    for (int j = 0; j < totalSMS; j++) {
-                        MessageModel eachModel = new MessageModel();
-                        eachModel.setBelongsToCurrentUser(false);
-                        eachModel.setMessage(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Inbox.BODY)));
-                        eachModel.setReceivedDate(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Inbox.DATE)));
-                        eachModel.setSender(cursor.getString(cursor.getColumnIndexOrThrow(Sms.Inbox.ADDRESS)));
-
-                        cursor.moveToNext();
-                        returnList.add(eachModel);
-                    }
-
-                }
-            } else {
-                Log.d(TAG,  "No messages available for this thread id " + threadId);
-            }
-        } catch (Exception ex) {
-            Log.e(TAG, "Error raised ", ex);
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-        return returnList;
-    }
-    public static void printConversations(Context context) {
-        ContentResolver cr = context.getContentResolver();
-        Cursor cursor = cr.query(Telephony.Sms.Conversations.CONTENT_URI, null, null, null, Telephony.Sms.Conversations.DEFAULT_SORT_ORDER);
-        if (cursor != null) {
-            String[] allColumns = cursor.getColumnNames();
-            int totalSMS = cursor.getCount();
-            Log.d(TAG, "Total SMS Count in Inbox :" + totalSMS);
-            if (cursor.moveToFirst()) {
-                for (int j = 0; j < totalSMS; j++) {
-                    for (String eachColumn : allColumns) {
-                        Log.d(TAG, eachColumn + " : " + cursor.getString(cursor.getColumnIndexOrThrow(eachColumn)));
-                    }
-                    cursor.moveToNext();
-                }
-                cursor.close();
-            }
-        } else {
-            Toast.makeText(context, "No message to show!", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    public static void printInboxMessages(Context context) {
-        ContentResolver cr = context.getContentResolver();
-        Cursor cursor = null;
-        try {
-            cursor = cr.query(Telephony.Sms.Inbox.CONTENT_URI, null, null,
-                    null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
-            int totalSMS = 0;
-            long currentTime = System.currentTimeMillis();
-            int count = 0;
-            boolean countHoursAgo = true;
-            if (cursor != null) {
-                totalSMS = cursor.getCount();
-
-                Log.d(TAG, "Total SMS Count in Inbox :" + totalSMS);
-                if (cursor.moveToFirst()) {
-                    for (int j = 0; j < totalSMS; j++) {
-
-                        //Log.d(TAG, "Received Date :" + cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.Inbox.DATE)));
-                       // Log.d(TAG, "Address :" + cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.Inbox.ADDRESS)));
-                        //Log.d(TAG, "Message body :" + cursor.getColumnIndexOrThrow(Telephony.Sms.Inbox.BODY));
-                       // Log.d(TAG, "Is Read :" + cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.Inbox.READ)));
-                        String[] allColumns = cursor.getColumnNames();
-                        for (String eachColumn : allColumns) {
-                            Log.d(TAG, eachColumn + " : " + cursor.getString(cursor.getColumnIndexOrThrow(eachColumn)));
-                        }
-                        cursor.moveToNext();
-                        //Log.d(TAG, "*******************************************************\n\n");
-                    }
-
-                }
-            } else {
-                Toast.makeText(context, "No message to show!", Toast.LENGTH_SHORT).show();
-            }
-        } catch (Exception ex) {
-            Log.e(TAG, "Error raised ", ex);
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-    }
-
-    public static void dumpSmsTable(Context context) {
-        Log.d(TAG, "**** Dump of sms table ****");
-        Cursor c = context.getContentResolver().query(Sms.CONTENT_URI,
-                SMS_PROJECTION, null, null, "_id DESC");
-        try {
-            // Only dump the latest 20 messages
-            c.moveToPosition(-1);
-            while (c.moveToNext() && c.getPosition() < 20) {
-                String body = c.getString(COLUMN_SMS_BODY);
-                Log.d(TAG, "dumpSmsTable " + BaseColumns._ID + ": " + c.getLong(COLUMN_ID) +
-                        " " + Sms.THREAD_ID + " : " + c.getLong(DATE) +
-                        " " + Sms.ADDRESS + " : " + c.getString(COLUMN_SMS_ADDRESS) +
-                        " " + Sms.BODY + " : " + body.substring(0, Math.min(body.length(), 8)) +
-                        " " + Sms.DATE + " : " + c.getLong(COLUMN_SMS_DATE) +
-                        " " + Sms.TYPE + " : " + c.getInt(COLUMN_SMS_TYPE));
-            }
-        } finally {
-            c.close();
-        }
-    }
-
-    public static void dumpThreadsTable(Context context) {
-        Log.d(TAG,"**** Dump of threads table ****");
-        Cursor c = context.getContentResolver().query(sAllThreadsUri,
-                ALL_THREADS_PROJECTION, null, null, "date ASC");
-        try {
-            c.moveToPosition(-1);
-            while (c.moveToNext()) {
-               // String snippet = extractEncStrFromCursor(c, SNIPPET, SNIPPET_CS);
-                Log.d(TAG, "dumpThreadsTable threadId: " + c.getLong(ID) +
-                        " " + ThreadsColumns.DATE + " : " + c.getLong(DATE) +
-                        " " + ThreadsColumns.MESSAGE_COUNT + " : " + c.getInt(MESSAGE_COUNT) +
-                        //" " + ThreadsColumns.SNIPPET + " : " + c.get(SNIPPET) +
-                        //" " + ThreadsColumns.SNIPPET_CHARSET + " : " + c.getString(SNIPPET_CS) +
-                        " " + ThreadsColumns.READ + " : " + c.getInt(READ) +
-                        " " + ThreadsColumns.ERROR + " : " + c.getInt(ERROR) +
-                        " " + ThreadsColumns.HAS_ATTACHMENT + " : " + c.getInt(HAS_ATTACHMENT) +
-                        " " + ThreadsColumns.RECIPIENT_IDS + " : " + c.getString(RECIPIENT_IDS));
-
-                //ContactList recipients = ContactList.getByIds(c.getString(RECIPIENT_IDS), false);
-                //Log.d(TAG, "----recipients: " + recipients.serialize());
-            }
-        } finally {
-            c.close();
-        }
-    }
-    */
     /**
      * Prepare and get Content URI of the SMS.
      * @param folderLocation
@@ -366,28 +427,81 @@ public class SMSUtils {
     	}
 		return returnUri;
 	}
-    /*public static ContactList getByIds(String spaceSepIds, boolean canBlock) {
-        ContactList list = new ContactList();
-        for (RecipientIdCache.Entry entry : RecipientIdCache.getAddresses(spaceSepIds)) {
-            if (entry != null && !TextUtils.isEmpty(entry.number)) {
-                Contact contact = Contact.get(entry.number, canBlock);
-                contact.setRecipientId(entry.id);
-                list.add(contact);
-            }
+    /**
+     * Prepares Selection string based on the filter option.
+     * @param filter
+     * @return
+     */
+    private static String getMessagesSelection(Filter filter) {
+    	StringBuffer selection = new StringBuffer();//Sms.Inbox.THREAD_ID + " = " + threadId
+    	boolean isAndAppendRequired = false;
+    	//From Address..
+        if (filter.fromAddress != null && filter.fromAddress.trim().length() > 0) {
+            selection.append(Sms.Inbox.ADDRESS + " LIKE '%" + filter.fromAddress.trim() + "'");
+            isAndAppendRequired = true;
         }
-        return list;
+        
+        //Message ID..
+        if (filter.messageId > -1) {
+        	if (isAndAppendRequired) {
+        		selection.append(" AND ");
+        	}
+            selection.append(Sms.Inbox._ID + " = " + filter.messageId);
+            isAndAppendRequired = true;
+        }
+        
+        //Thread ID...
+        if (filter.threadId > -1) {
+        	if (isAndAppendRequired) {
+        		selection.append(" AND ");
+        	}
+            selection.append(Sms.Inbox.THREAD_ID + " = " + filter.threadId);
+            isAndAppendRequired = true;
+        }
+        
+        //Conversation id..
+        if (filter.conversationId > -1) {
+        	if (isAndAppendRequired) {
+        		selection.append(" AND ");
+        	}
+            selection.append(Sms.Inbox.THREAD_ID + " = " + filter.conversationId);
+            isAndAppendRequired = true;
+        }
+        
+        //Dates..
+        if (filter.recievedDateLong > -1) {
+        	if (isAndAppendRequired) {
+        		selection.append(" AND ");
+        	}
+            selection.append(Sms.Inbox.DATE + " = " + filter.recievedDateLong);
+            isAndAppendRequired = true;
+        } else if (filter.greaterRecievedDateLong > -1) {
+        	if (isAndAppendRequired) {
+        		selection.append(" AND ");
+        	}
+            selection.append(Sms.Inbox.DATE + " > " + filter.greaterRecievedDateLong);
+            isAndAppendRequired = true;
+        } else if (filter.lesserRecievedDateLong > -1) {
+        	if (isAndAppendRequired) {
+        		selection.append(" AND ");
+        	}
+            selection.append(Sms.Inbox.DATE + " < " + filter.lesserRecievedDateLong);
+            isAndAppendRequired = true;
+        }
+        return selection.toString();
     }
-    public static String extractEncStrFromCursor(Cursor cursor,
-                                                 int columnRawBytes, int columnCharset) {
-        String rawBytes = cursor.getString(columnRawBytes);
-        int charset = cursor.getInt(columnCharset);
-
-        if (TextUtils.isEmpty(rawBytes)) {
-            return "";
-        } else if (charset == CharacterSets.ANY_CHARSET) {
-            return rawBytes;
-        } else {
-            return new EncodedStringValue(charset, PduPersister.getBytes(rawBytes)).getString();
+    /**
+     * Prepares selection string for the Conversation.
+     * @param filter
+     * @return
+     */
+    private static String getConversationSelection(Filter filter) {
+        StringBuffer selection = new StringBuffer();//Sms.Inbox.THREAD_ID + " = " + threadId
+        if (filter.conversationId > -1) {
+            selection.append(Sms.Inbox.THREAD_ID + " = " + filter.conversationId);
         }
-    }*/
+        return selection.toString();
+    }
+    
+   
 }
